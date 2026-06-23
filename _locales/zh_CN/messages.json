@@ -1,12 +1,12 @@
 {
   "serviceName": {
-    "message": "S3/COS/OSS"
+    "message": "MINIO/COS/OSS"
   },
   "extensionDescription": {
-    "message": "向 AWS S3 / COS / OSS 上传您的邮件附件"
+    "message": "向 AWS MINIO / COS / OSS 上传您的邮件附件"
   },
   "extensionName": {
-    "message": "S3 附件提供程序"
+    "message": "MINIO 附件提供程序"
   },
   "save": {
     "message": "保存"

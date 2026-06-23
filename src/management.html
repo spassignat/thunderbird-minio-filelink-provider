@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>MinIO Filelink</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 22px;
+            margin: 0 0 4px 0;
+            color: #2c3e50;
+        }
+        .sub {
+            color: #666;
+            margin-bottom: 25px;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 15px;
+            font-size: 14px;
+        }
+        .form-group { margin-bottom: 18px; }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #2c3e50;
+            font-size: 14px;
+        }
+        label .req { color: #e74c3c; }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        input[type="text"]:focus, input[type="password"]:focus {
+            border-color: #4a90d9;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(74,144,217,0.1);
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 6px 0;
+        }
+        .checkbox-group input { width: 18px; height: 18px; cursor: pointer; }
+        .checkbox-group label { font-weight: normal; margin: 0; cursor: pointer; }
+        .hint {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 3px;
+        }
+        .hint code {
+            background: #f4f4f4;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+            border-top: 1px solid #e0e0e0;
+            padding-top: 25px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            flex: 1;
+            min-width: 120px;
+        }
+        .btn-primary { background: #4a90d9; color: white; }
+        .btn-primary:hover { background: #357abd; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-success:hover { background: #229954; }
+        #status {
+            margin-top: 20px;
+            padding: 12px 15px;
+            border-radius: 4px;
+            display: none;
+            font-size: 14px;
+        }
+        #status.info { display: block; background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        #status.success { display: block; background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        #status.error { display: block; background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        @media (max-width: 600px) {
+            .container { padding: 20px; }
+            .button-group { flex-direction: column; }
+            .btn { flex: none; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📦 MinIO Filelink</h1>
+    <div class="sub">Upload vos pièces jointes vers MinIO</div>
+
+    <form id="settingsForm">
+        <div class="form-group">
+            <label>Endpoint <span class="req">*</span></label>
+            <input type="text" id="endpoint" placeholder="minio.example.com:9000" />
+            <div class="hint">Ex: <code>minio-api.cicd.exygen.fr:443</code></div>
+        </div>
+
+        <div class="form-group">
+            <label>Bucket <span class="req">*</span></label>
+            <input type="text" id="bucket" placeholder="mon-bucket" />
+        </div>
+
+        <div class="form-group">
+            <label>Access Key <span class="req">*</span></label>
+            <input type="text" id="accessKey" placeholder="Votre Access Key" />
+        </div>
+
+        <div class="form-group">
+            <label>Secret Key <span class="req">*</span></label>
+            <input type="password" id="secretKey" placeholder="Votre Secret Key" />
+        </div>
+
+        <div class="form-group">
+            <div class="checkbox-group">
+                <input type="checkbox" id="useSSL" />
+                <label for="useSSL">Utiliser HTTPS (SSL)</label>
+            </div>
+            <div class="hint">Décocher pour HTTP</div>
+        </div>
+
+        <div class="form-group">
+            <label>Région</label>
+            <input type="text" id="region" placeholder="us-east-1" value="us-east-1" />
+            <div class="hint">Généralement ignoré par MinIO</div>
+        </div>
+
+        <div class="form-group">
+            <label>URL de partage personnalisée (optionnel)</label>
+            <input type="text" id="customUrl" placeholder="https://domaine.com/{bucket}/{key}" />
+            <div class="hint">Utilisez <code>{bucket}</code> et <code>{key}</code></div>
+        </div>
+
+        <div class="button-group">
+            <button type="button" class="btn btn-primary" id="save">💾 Sauvegarder</button>
+            <button type="button" class="btn btn-success" id="test">🔍 Tester</button>
+        </div>
+
+        <div id="status"></div>
+    </form>
+</div>
+<script src="management.js"></script>
+</body>
+</html>

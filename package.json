@@ -1,0 +1,15 @@
+{
+  "name": "minio-tester",
+  "version": "1.0.0",
+  "description": "Testeur MinIO - Node.js et Navigateur",
+  "type": "module",
+  "main": "minio-core.js",
+  "scripts": {
+    "test": "node minio-test.js",
+    "test:http": "node minio-test.js --http",
+    "test:debug": "node --inspect minio-test.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  }
+}

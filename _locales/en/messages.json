@@ -1,12 +1,12 @@
 {
   "serviceName": {
-    "message": "S3"
+    "message": "MINIO"
   },
   "extensionDescription": {
-    "message": "Uploads your large attachments to S3"
+    "message": "Uploads your large attachments to MINIO"
   },
   "extensionName": {
-    "message": "S3 FileLink Provider"
+    "message": "MINIO FileLink Provider"
   },
   "save": {
     "message": "Save"

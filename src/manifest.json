@@ -1,0 +1,36 @@
+{
+  "manifest_version": 2,
+  "name": "MinIO Filelink",
+  "version": "1.0.0",
+  "description": "Upload large attachments to MinIO",
+  "applications": {
+    "gecko": {
+      "id": "minio-filelink@exygen.fr",
+      "strict_min_version": "78.0"
+    }
+  },
+  "permissions": [
+    "storage",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "options_ui": {
+    "page": "management.html"
+  },
+  "cloud_file": {
+    "name": "__MSG_serviceName__",
+    "management_url": "management.html"
+  },
+  "icons": {
+    "64": "icon64.png",
+    "32": "icon32.png",
+    "16": "icon16.png",
+    "48": "icon48.png"
+  },
+  "default_locale": "en"
+}
