@@ -24,10 +24,35 @@
         }
         .sub {
             color: #666;
-            margin-bottom: 25px;
+            margin-bottom: 15px;
             border-bottom: 1px solid #e0e0e0;
-            padding-bottom: 15px;
+            padding-bottom: 10px;
             font-size: 14px;
+        }
+        .account-id {
+            background: #f0f0f0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #555;
+            margin-bottom: 20px;
+            font-family: monospace;
+        }
+        .config-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .config-status.configured {
+            background: #d4edda;
+            color: #155724;
+        }
+        .config-status.not-configured {
+            background: #f8d7da;
+            color: #721c24;
         }
         .form-group { margin-bottom: 18px; }
         label {
@@ -38,7 +63,7 @@
             font-size: 14px;
         }
         label .req { color: #e74c3c; }
-        input[type="text"], input[type="password"] {
+        input[type="text"], input[type="password"], input[type="number"] {
             width: 100%;
             padding: 8px 12px;
             border: 1px solid #ddd;
@@ -46,7 +71,7 @@
             font-size: 14px;
             box-sizing: border-box;
         }
-        input[type="text"]:focus, input[type="password"]:focus {
+        input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus {
             border-color: #4a90d9;
             outline: none;
             box-shadow: 0 0 0 3px rgba(74,144,217,0.1);
@@ -111,14 +136,18 @@
 </head>
 <body>
 <div class="container">
-    <h1>📦 MinIO Filelink</h1>
-    <div class="sub">Upload vos pièces jointes vers MinIO</div>
+    <h1>
+        📦 MinIO Filelink
+        <span id="configStatus" class="config-status not-configured">Non configuré</span>
+    </h1>
+    <div class="sub">Configuration du compte MinIO</div>
+    <div class="account-id" id="accountLabel">Compte: chargement...</div>
 
     <form id="settingsForm">
         <div class="form-group">
             <label>Endpoint <span class="req">*</span></label>
             <input type="text" id="endpoint" placeholder="minio.example.com:9000" />
-            <div class="hint">Ex: <code>minio-api.cicd.exygen.fr:443</code></div>
+            <div class="hint">Ex: <code>minio.domaine.com</code></div>
         </div>
 
         <div class="form-group">
@@ -128,12 +157,12 @@
 
         <div class="form-group">
             <label>Access Key <span class="req">*</span></label>
-            <input type="text" id="accessKey" placeholder="Votre Access Key" />
+            <input type="text" id="accessKeyId" placeholder="Votre Access Key" />
         </div>
 
         <div class="form-group">
             <label>Secret Key <span class="req">*</span></label>
-            <input type="password" id="secretKey" placeholder="Votre Secret Key" />
+            <input type="password" id="secretAccessKey" placeholder="Votre Secret Key" />
         </div>
 
         <div class="form-group">
@@ -156,9 +185,15 @@
             <div class="hint">Utilisez <code>{bucket}</code> et <code>{key}</code></div>
         </div>
 
+        <div class="form-group">
+            <label>Limite de taille d'upload (octets, optionnel)</label>
+            <input type="number" id="uploadSizeLimit" placeholder="-1 = illimité" />
+            <div class="hint">Ex: <code>1073741824</code> pour 1 Go</div>
+        </div>
+
         <div class="button-group">
-            <button type="button" class="btn btn-primary" id="save">💾 Sauvegarder</button>
-            <button type="button" class="btn btn-success" id="test">🔍 Tester</button>
+            <button type="button" class="btn btn-primary" id="saveBtn">💾 Sauvegarder</button>
+            <button type="button" class="btn btn-success" id="testBtn">🔍 Tester</button>
         </div>
 
         <div id="status"></div>

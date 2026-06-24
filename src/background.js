@@ -1,7 +1,14 @@
 /*
  * MinIO Filelink Provider - Background
  * Service worker pour Thunderbird
+ * Fait l'interface avec TB
  */
+
+// ==========================================
+// IMPORT
+// ==========================================
+
+// AccountManager est disponible globalement via le script importé
 
 // ==========================================
 // LOGGER
@@ -10,283 +17,347 @@
 const log = (...args) => console.log('[MinIO]', ...args);
 const logError = (...args) => console.error('[MinIO]', ...args);
 
-async function getAccount(accountId) {
-    const accountInfo = await browser.storage.local.get(accountId);
-    if (!accountInfo[accountId] || !("endpoint" in accountInfo[accountId])) {
-        throw new Error("ERR_ACCOUNT_NOT_FOUND");
+// ==========================================
+// INITIALISATION DU GESTIONNAIRE DE COMPTES
+// ==========================================
+/**
+ *
+ * @type {AccountManager}
+ */
+const accountManager = logClass(new AccountManager(), "AccountManager");
+// ==========================================
+// GESTION DE LA CONFIGURATION PAR COMPTE
+// ==========================================
+
+/**
+ * Récupère la configuration pour un compte spécifique
+ */
+async function getConfig(accountId) {
+    try {
+        return await accountManager.getAccount(accountId);
+    } catch (error) {
+        log(`⚠️ Aucune configuration trouvée pour ${accountId}`);
+        return null;
     }
-    return accountInfo[accountId];
+}
+
+/**
+ * Sauvegarde la configuration pour un compte spécifique
+ */
+async function saveConfig(accountId, config) {
+    try {
+        const exists = await accountManager.accountExists(accountId);
+        if (exists) {
+            await accountManager.updateAccount(accountId, config);
+        } else {
+            await accountManager.createAccount(accountId, config);
+        }
+        log(`✅ Configuration sauvegardée pour le compte ${accountId}`);
+        return config;
+    } catch (error) {
+        logError(`❌ Erreur lors de la sauvegarde:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Supprime la configuration d'un compte
+ */
+async function deleteConfig(accountId) {
+    try {
+        await accountManager.deleteAccount(accountId);
+        log(`🗑️ Configuration supprimée pour le compte ${accountId}`);
+        return true;
+    } catch (error) {
+        logError(`❌ Erreur lors de la suppression:`, error);
+        return false;
+    }
+}
+/**
+ * Vérifie si un compte est configuré
+ */
+async function isAccountConfigured(accountId) {
+    try {
+        const config = await accountManager.getAccount(accountId);
+        const configured = !!(config &&
+            config.endpoint &&
+            config.bucketName &&
+            config.accessKeyId &&
+            config.secretAccessKey);
+        log(`🔍 Compte ${accountId}: ${configured ? '✅ Configuré' : '❌ Non configuré'}`);
+        return configured;
+    } catch (error) {
+        return false;
+    }
 }
 
 // ==========================================
-// CLIENT MINIO - ALIGNE SUR LA VERSION NODE OK
+// GESTION DES COMPTES THUNDERBIRD
 // ==========================================
 
-class MinioClient {
-    constructor(config) {
-        this.config = {
-            endpoint: config.endpoint,
-            bucket: config.bucket,
-            accessKey: config.accessKey,
-            secretKey: config.secretKey,
-            useSSL: config.useSSL ?? false,
-            usePathStyle: config.usePathStyle ?? true,
-            region: config.region || 'us-east-1'
-        };
-    }
+/**
+ * Met à jour les informations d'un compte dans Thunderbird
+ */
+async function updateAccountInfo(accountId) {
+    try {
+        const configured = await isAccountConfigured(accountId);
+        const config = await getConfig(accountId);
 
-    getHost() {
-        return this.config.endpoint.replace(/^https?:\/\//, '');
-    }
+        // Récupérer les informations de l'API Thunderbird
+        const account = await browser.cloudFile.getAccount(accountId);
+        if (!account) {
+            log(`⚠️ Compte Thunderbird ${accountId} non trouvé`);
+            return;
+        }
 
-    buildUrl(key) {
-        const protocol = this.config.useSSL ? 'https' : 'http';
-        const host = this.getHost();
-        const path = `/${this.config.bucket}/${key}`;
-        return `${protocol}://${host}${path}`;
-    }
-
-    async sha256(data) {
-        const hash = await crypto.subtle.digest('SHA-256', data);
-        return Array.from(new Uint8Array(hash))
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('');
-    }
-
-    async sha256String(str) {
-        const encoder = new TextEncoder();
-        return await this.sha256(encoder.encode(str));
-    }
-
-    async hmacSha256(key, message) {
-        const encoder = new TextEncoder();
-        const cryptoKey = await crypto.subtle.importKey(
-            'raw',
-            key,
-            {name: 'HMAC', hash: 'SHA-256'},
-            false,
-            ['sign']
-        );
-
-        const signature = await crypto.subtle.sign(
-            'HMAC',
-            cryptoKey,
-            encoder.encode(message)
-        );
-
-        return new Uint8Array(signature);
-    }
-
-    async generateSignature(secretKey, date, region, stringToSign) {
-        const encoder = new TextEncoder();
-
-        const kDate = await this.hmacSha256(encoder.encode('AWS4' + secretKey), date);
-        const kRegion = await this.hmacSha256(kDate, region);
-        const kService = await this.hmacSha256(kRegion, 's3');
-        const kSigning = await this.hmacSha256(kService, 'aws4_request');
-        const signature = await this.hmacSha256(kSigning, stringToSign);
-
-        return Array.from(signature)
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('');
-    }
-
-    async prepareRequest(content, key) {
-        const host = this.getHost();
-        const url = this.buildUrl(key);
-        const method = 'PUT';
-
-        const now = new Date();
-        const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
-        const date = amzDate.slice(0, 8);
-
-        // 1. Hash du payload
-        const payloadHash = await this.sha256(content);
-
-        // 2. URI canonique
-        const canonicalUri = `/${this.config.bucket}/${key}`;
-        const canonicalQueryString = '';
-
-        // 3. Headers a signer - identiques a la version Node.js
-        const contentType = 'application/octet-stream';
-        const headersToSign = {
-            'host': host,
-            'x-amz-content-sha256': payloadHash,
-            'x-amz-date': amzDate,
-            'content-type': contentType
-        };
-
-        // Tri alphabetique comme dans la version Node
-        const sortedHeaders = Object.entries(headersToSign).sort((a, b) => a[0].localeCompare(b[0]));
-        const canonicalHeaders = sortedHeaders.map(([k, v]) => `${k}:${v}\n`).join('');
-        const signedHeaders = sortedHeaders.map(([k]) => k).join(';');
-
-        // 4. Requete canonique
-        const canonicalRequest =
-            `${method}\n` +
-            `${canonicalUri}\n` +
-            `${canonicalQueryString}\n` +
-            `${canonicalHeaders}\n` +
-            `${signedHeaders}\n` +
-            `${payloadHash}`;
-
-        log('📝 Requete canonique:');
-        log(canonicalRequest);
-
-        // 5. Hash de la requete canonique
-        const hashedCanonical = await this.sha256String(canonicalRequest);
-
-        // 6. String to sign
-        const region = this.config.region;
-        const stringToSign =
-            `AWS4-HMAC-SHA256\n` +
-            `${amzDate}\n` +
-            `${date}/${region}/s3/aws4_request\n` +
-            `${hashedCanonical}`;
-
-        log('🔑 String to sign:');
-        log(stringToSign);
-
-        // 7. Signature
-        const signature = await this.generateSignature(
-            this.config.secretKey,
-            date,
-            region,
-            stringToSign
-        );
-
-        // 8. Authorization
-        const auth =
-            `AWS4-HMAC-SHA256 Credential=${this.config.accessKey}/${date}/${region}/s3/aws4_request, ` +
-            `SignedHeaders=${signedHeaders}, ` +
-            `Signature=${signature}`;
-
-        log('🔐 Authorization:');
-        log(auth);
-
-        // 9. Headers finaux
-        const finalHeaders = {
-            'Host': host,
-            'x-amz-content-sha256': payloadHash,
-            'x-amz-date': amzDate,
-            'Authorization': auth,
-            'Content-Type': contentType,
-            'Content-Length': String(content.byteLength ?? content.length)
-        };
-
-        log('📋 Headers finaux:');
-        Object.entries(finalHeaders).forEach(([k, v]) => {
-            if (k === 'Authorization') {
-                log(`  ${k}: ${v.substring(0, 120)}...`);
-            } else {
-                log(`  ${k}: ${v}`);
-            }
+        // Mettre à jour le compte
+        await browser.cloudFile.updateAccount(accountId, {
+            configured: configured,
+            managementUrl: browser.runtime.getURL('management.html'),
+            uploadSizeLimit: config?.uploadSizeLimit || -1,
+            spaceUsed: -1,
+            spaceRemaining: -1
         });
 
-        return {url, headers: finalHeaders, payloadHash};
-    }
-
-    async upload(content, key) {
-        try {
-            const req = await this.prepareRequest(content, key);
-
-            log(`📤 Upload: ${key} (${content.byteLength ?? content.length} octets)`);
-            log(`🌐 URL: ${req.url}`);
-
-            const response = await fetch(req.url, {
-                method: 'PUT',
-                headers: req.headers,
-                body: content
-            });
-
-            let responseText = '';
-            try {
-                responseText = await response.text();
-            } catch (e) {
-            }
-
-            log(`📊 Status: ${response.status} ${response.statusText}`);
-
-            if (responseText) {
-                log('📄 Reponse:', responseText);
-            }
-
-            if (!response.ok) {
-                throw new Error(`[${response.status}] ${responseText || response.statusText}`);
-            }
-
-            log(`✅ Upload reussi: ${key}`);
-            return {key, url: req.url, status: response.status};
-
-        } catch (error) {
-            logError(`❌ Erreur: ${error.message}`);
-            throw error;
-        }
-    }
-
-    async test() {
-        log('🧪 Test de connexion...');
-        const encoder = new TextEncoder();
-        const content = encoder.encode(`Test MinIO - ${new Date().toISOString()}`);
-        const key = `test-${Date.now()}.txt`;
-        return await this.upload(content, key);
+        log(`✅ Compte ${accountId} mis à jour: configured=${configured}`);
+    } catch (error) {
+        logError(`❌ Erreur lors de la mise à jour du compte ${accountId}:`, error);
     }
 }
 
 // ==========================================
-// GESTION DE LA CONFIGURATION
+// GESTIONNAIRES D'UPLOAD
 // ==========================================
 
-async function getConfig() {
-    const result = await browser.storage.local.get('minioConfig');
-    return result.minioConfig || null;
-}
+/**
+ * Upload un fichier vers MinIO pour un compte spécifique
+ */
+async function handleUpload(accountId, file, relatedFileInfo = null) {
+    const {config, client} = await createMinioClient(accountId);
 
-// ==========================================
-// GESTIONNAIRES
-// ==========================================
-
-async function handleUpload(file, account) {
-    if (!account || Object.keys(account).length === 0) {
-        account = await getConfig();
-        if (!account) {
-            throw new Error('Configuration non trouvee. Veuillez configurer le plugin dans les options.');
-        }
-    }
-
-    const client = new MinioClient({
-        endpoint: account.endpoint,
-        bucket: account.bucketName,
-        accessKey: account.accessKeyId,
-        secretKey: account.secretAccessKey,
-        useSSL: account.useSSL || false,
-        usePathStyle: true,
-        region: account.region || 'us-east-1'
-    });
-
-    const content = await file.arrayBuffer();
+    const content = await file.data.arrayBuffer();
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const key = `${Date.now()}-${safeName}`;
 
-    return await client.upload(new Uint8Array(content), key);
+    // Si un fichier lié existe, réutiliser sa clé
+    let key;
+    if (relatedFileInfo && relatedFileInfo.url) {
+        // Extraire la clé de l'URL existante
+        const urlParts = relatedFileInfo.url.split('/');
+        key = urlParts[urlParts.length - 1];
+        log(`♻️ Mise à jour du fichier existant: ${key}`);
+    } else {
+        key = `${Date.now()}-${safeName}`;
+    }
+
+    const result = await client.upload(new Uint8Array(content), key);
+
+    // Si une URL personnalisée est configurée, l'utiliser
+    let fileUrl = result.url;
+    if (config.customUrl) {
+        fileUrl = config.customUrl
+            .replace(/{bucket}/g, config.bucketName)
+            .replace(/{key}/g, result.key);
+    }
+
+    return {
+        url: fileUrl,
+        key: result.key,
+        templateInfo: {
+            service_name: 'MinIO',
+            service_icon: browser.runtime.getURL('icon64.png'),
+            service_url: config.endpoint
+        }
+    };
 }
 
-async function handleTest(account) {
-    const client = new MinioClient({
-        endpoint: account.endpoint,
-        bucket: account.bucketName,
-        accessKey: account.accessKeyId,
-        secretKey: account.secretAccessKey,
-        useSSL: account.useSSL || false,
+async function createMinioClient(accountId) {
+    const config = await getConfig(accountId);
+    if (!config) {
+        throw new Error(`Configuration non trouvée pour le compte ${accountId}`);
+    }
+
+    // Utilisation du client MinIO pour la suppression
+    let minioClient = new MinioClient({
+        endpoint: config.endpoint,
+        bucket: config.bucketName,
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
+        useSSL: config.useSSL || false,
         usePathStyle: true,
-        region: account.region || 'us-east-1'
+        region: config.region || 'us-east-1'
+    });
+    /**
+     *
+     * @type {MinioClient}
+     */
+    // const client = minioClient;
+    const client = logClass(minioClient, "MinioClient");
+    return {config, client};
+}
+
+/**
+ * Supprime un fichier sur MinIO
+ */
+async function handleDelete(accountId, fileId) {
+    const {config, client} = await createMinioClient(accountId);
+
+    // Construction de l'URL de suppression
+    const url = client.buildUrl(fileId);
+
+    // Signature S3 pour la suppression
+    const method = 'DELETE';
+    const host = client.getHost();
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const date = amzDate.slice(0, 8);
+    const region = config.region || 'us-east-1';
+
+    // Headers pour la signature
+    const headersToSign = {
+        'host': host,
+        'x-amz-date': amzDate
+    };
+
+    const sortedHeaders = Object.entries(headersToSign).sort((a, b) => a[0].localeCompare(b[0]));
+    const canonicalHeaders = sortedHeaders.map(([k, v]) => `${k}:${v}\n`).join('');
+    const signedHeaders = sortedHeaders.map(([k]) => k).join(';');
+
+    // Requête canonique
+    const canonicalUri = `/${config.bucketName}/${fileId}`;
+    const canonicalQueryString = '';
+    const payloadHash = 'UNSIGNED-PAYLOAD';
+
+    const canonicalRequest = `${method}\n${canonicalUri}\n${canonicalQueryString}\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+
+    const encoder = new TextEncoder();
+    const hashedCanonical = await client.sha256String(canonicalRequest);
+
+    const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${date}/${region}/s3/aws4_request\n${hashedCanonical}`;
+
+    const signature = await client.generateSignature(
+        config.secretAccessKey,
+        date,
+        region,
+        stringToSign
+    );
+
+    const auth = `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${date}/${region}/s3/aws4_request, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    // Exécution de la suppression
+    const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+            'Host': host,
+            'x-amz-date': amzDate,
+            'Authorization': auth
+        }
     });
 
-    return await client.test();
+    if (!response.ok && response.status !== 404) {
+        throw new Error(`Erreur lors de la suppression: ${response.status}`);
+    }
+
+    log(`🗑️ Fichier supprimé: ${fileId}`);
+    return {success: true};
+}
+
+/**
+ * Renomme un fichier sur MinIO
+ */
+async function handleRename(accountId, fileId, newName) {
+    const {config, client} = await createMinioClient(accountId);
+
+
+    // 1. Télécharger le fichier existant
+    const oldUrl = client.buildUrl(fileId);
+    const response = await fetch(oldUrl);
+    if (!response.ok) {
+        throw new Error(`Impossible de lire le fichier: ${response.status}`);
+    }
+    const content = await response.arrayBuffer();
+
+    // 2. Upload avec le nouveau nom
+    const newKey = `${Date.now()}-${newName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const result = await client.upload(new Uint8Array(content), newKey);
+
+    // 3. Supprimer l'ancien
+    await handleDelete(accountId, fileId);
+
+    // 4. Retourner la nouvelle URL
+    let fileUrl = result.url;
+    if (config.customUrl) {
+        fileUrl = config.customUrl
+            .replace(/{bucket}/g, config.bucketName)
+            .replace(/{key}/g, newKey);
+    }
+
+    log(`📝 Fichier renommé: ${fileId} → ${newKey}`);
+    return {url: fileUrl};
 }
 
 // ==========================================
-// GESTION DES MESSAGES
+// GESTION DES ÉVÉNEMENTS CLOUD FILE
+// ==========================================
+
+// Écouteur d'ajout de compte
+browser.cloudFile.onAccountAdded.addListener(async (account) => {
+    log(`📁 Compte ajouté: ${account.id}`);
+    await updateAccountInfo(account.id);
+});
+
+// Écouteur de suppression de compte
+browser.cloudFile.onAccountDeleted.addListener(async (accountId) => {
+    log(`🗑️ Compte supprimé: ${accountId}`);
+    await deleteConfig(accountId);
+});
+
+// Écouteur d'upload
+browser.cloudFile.onFileUpload.addListener(async (account, fileInfo, tab, relatedFileInfo) => {
+    log(`📤 Upload demandé pour le compte ${account.id}, fichier: ${fileInfo.name}`);
+
+    try {
+        const result = await handleUpload(account.id, fileInfo, relatedFileInfo);
+
+        log(`✅ Upload réussi: ${result.url}`);
+        return result;
+    } catch (error) {
+        logError(`❌ Erreur d'upload:`, error);
+        return {error: error.message || true};
+    }
+});
+
+// Écouteur de suppression de fichier
+browser.cloudFile.onFileDeleted.addListener(async (account, fileId, tab) => {
+    log(`🗑️ Suppression demandée pour le compte ${account.id}, fichier: ${fileId}`);
+
+    try {
+        await handleDelete(account.id, fileId);
+        log(`✅ Fichier supprimé: ${fileId}`);
+        return {success: true};
+    } catch (error) {
+        logError(`❌ Erreur de suppression:`, error);
+        return {error: error.message || true};
+    }
+});
+
+// Écouteur de renommage de fichier (TB 97+)
+if (browser.cloudFile.onFileRename) {
+    browser.cloudFile.onFileRename.addListener(async (account, fileId, newName, tab) => {
+        log(`📝 Renommage demandé pour le compte ${account.id}, fichier: ${fileId} → ${newName}`);
+
+        try {
+            const result = await handleRename(account.id, fileId, newName);
+            log(`✅ Fichier renommé: ${result.url}`);
+            return result;
+        } catch (error) {
+            logError(`❌ Erreur de renommage:`, error);
+            return {error: error.message || true};
+        }
+    });
+}
+
+// ==========================================
+// GESTION DES MESSAGES (Interface UI)
 // ==========================================
 
 browser.runtime.onMessage.addListener(async (msg, sender) => {
@@ -294,28 +365,56 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
 
     try {
         switch (msg.type) {
-            case 'upload': {
-                const uploadResult = await handleUpload(msg.file, msg.account);
-                return {success: true, data: uploadResult};
-            }
-
-            case 'test': {
-                const testResult = await handleTest(msg.account);
-                return {success: true, data: testResult};
-            }
-
+            // ===== Gestion de la configuration pour un compte =====
             case 'getConfig': {
-                const config = await getConfig();
+                const config = await getConfig(msg.accountId);
                 return {success: true, data: config};
             }
 
-            case 'settingsUpdated': {
-                await browser.storage.local.set({minioConfig: msg.config});
-                log('✅ Parametres sauvegardes');
+            case 'saveConfig': {
+                const config = await saveConfig(msg.accountId, msg.config);
+                // Mettre à jour le compte dans Thunderbird
+                await updateAccountInfo(msg.accountId);
+                return {success: true, data: config};
+            }
+
+            case 'isConfigured': {
+                const configured = await isAccountConfigured(msg.accountId);
+                return {success: true, data: configured};
+            }
+
+            case 'deleteConfig': {
+                const result = await deleteConfig(msg.accountId);
+                return {success: result};
+            }
+
+            // ===== Gestion des comptes =====
+            case 'listAccounts': {
+                const accounts = await accountManager.getAllAccounts();
+                return {success: true, data: accounts};
+            }
+
+            case 'getDefaultAccount': {
+                const defaultId = await accountManager.getDefaultAccountId();
+                return {success: true, data: defaultId};
+            }
+
+            case 'setDefaultAccount': {
+                await accountManager.setDefaultAccount(msg.accountId);
                 return {success: true};
             }
 
+            // ===== Test de connexion =====
+            case 'test': {
+                const {config, client} = await createMinioClient(msg.accountId);
+
+
+                const result = await client.test();
+                return {success: true, data: result};
+            }
+
             default:
+                log(`⚠️ Type de message non reconnu: ${msg.type}`);
                 return {success: false, error: 'Type de message inconnu'};
         }
     } catch (error) {
@@ -324,10 +423,3 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
         return {success: false, error: error.message};
     }
 });
-
-// ==========================================
-// INITIALISATION
-// ==========================================
-
-log('🚀 MinIO Filelink Provider charge');
-log('📌 Version: 1.0.0');

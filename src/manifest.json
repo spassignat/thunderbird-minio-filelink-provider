@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "MinIO Filelink",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Upload large attachments to MinIO",
   "applications": {
     "gecko": {
@@ -16,15 +16,22 @@
   ],
   "background": {
     "scripts": [
+      "account-manager.js",
+      "minio-client.js",
+      "LoggerProxy.js",
       "background.js"
     ]
   },
   "options_ui": {
-    "page": "management.html"
+    "page": "management.html",
+    "open_in_tab": false,
+    "browser_style": true
   },
   "cloud_file": {
-    "name": "__MSG_serviceName__",
-    "management_url": "management.html"
+    "name": "MinIO Filelink",
+    "management_url": "management.html",
+    "browser_style": true,
+    "reuse_uploads": false
   },
   "icons": {
     "64": "icon64.png",
