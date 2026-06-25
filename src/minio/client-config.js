@@ -16,3 +16,10 @@ class MinioClientConfig {
 		this.publicEndpoint = config.publicEndpoint || config.endpoinT;
 	}
 }
+
+// ==========================================
+// EXPORT
+// ==========================================
+if (typeof module !== 'undefined' && module.exports) {
+	module.exports = {MinioClientConfig, STORAGE_KEY};
+}

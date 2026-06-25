@@ -18,7 +18,7 @@
     "scripts": [
       "account-manager.js",
       "client-config.js",
-      "minio-client-multipart.js",
+      "minio-client.js",
       "LoggerProxy.js",
       "background.js"
     ]

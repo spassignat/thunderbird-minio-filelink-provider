@@ -2,19 +2,14 @@
  * MinIO Client - Client S3 compatible avec support multipart
  * Version avec modifications minimales pour ajouter le multipart upload
  */
-
 // ==========================================
 // LOGGER
 // ==========================================
-
 const minioLog = (...args) => console.log('[MinIO Client]', ...args);
 const minioLogError = (...args) => console.error('[MinIO Client]', ...args);
-
 // ==========================================
 // CLIENT MINIO
 // ==========================================
-
-
 class MultipartMinioClient {
 	/**
 	 * @param {MinioClientConfig} config
@@ -67,25 +62,21 @@ class MultipartMinioClient {
 			false,
 			['sign']
 		);
-
 		const signature = await crypto.subtle.sign(
 			'HMAC',
 			cryptoKey,
 			encoder.encode(message)
 		);
-
 		return new Uint8Array(signature);
 	}
 
 	async generateSignature(secretAccessKey, date, region, stringToSign) {
 		const encoder = new TextEncoder();
-
 		const kDate = await this.hmacSha256(encoder.encode('AWS4' + secretAccessKey), date);
 		const kRegion = await this.hmacSha256(kDate, region);
 		const kService = await this.hmacSha256(kRegion, 's3');
 		const kSigning = await this.hmacSha256(kService, 'aws4_request');
 		const signature = await this.hmacSha256(kSigning, stringToSign);
-
 		return Array.from(signature)
 			.map(b => b.toString(16).padStart(2, '0'))
 			.join('');
@@ -94,24 +85,19 @@ class MultipartMinioClient {
 	// ==========================================
 	// MÉTHODES EXISTANTES (non modifiées)
 	// ==========================================
-
 	async prepareRequest(content, key) {
 		const host = this.getHost();
 		const url = this.buildUrl(key);
 		const method = 'PUT';
-
 		const now = new Date();
 		const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
 		const date = amzDate.slice(0, 8);
-
 		// 1. Hash du payload - VÉRIFIER QUE content EST BIEN UN Uint8Array
 		const payloadHash = await this.sha256(content);
 		minioLog(`🔑 Payload hash: ${payloadHash}`);
-
 		// 2. URI canonique
 		const canonicalUri = `/${this.config.bucket}/${key}`;
 		const canonicalQueryString = '';
-
 		// 3. Headers a signer
 		const contentType = 'application/octet-stream';
 		const headersToSign = {
@@ -120,12 +106,10 @@ class MultipartMinioClient {
 			'x-amz-date': amzDate,
 			'content-type': contentType
 		};
-
 		// Tri alphabétique
 		const sortedHeaders = Object.entries(headersToSign).sort((a, b) => a[0].localeCompare(b[0]));
 		const canonicalHeaders = sortedHeaders.map(([k, v]) => `${k}:${v}\n`).join('');
 		const signedHeaders = sortedHeaders.map(([k]) => k).join(';');
-
 		// 4. Requête canonique
 		const canonicalRequest =
 			`${method}\n` +
@@ -134,14 +118,11 @@ class MultipartMinioClient {
 			`${canonicalHeaders}\n` +
 			`${signedHeaders}\n` +
 			`${payloadHash}`;
-
 		minioLog('📝 Requête canonique:');
 		minioLog(canonicalRequest);
-
 		// 5. Hash de la requête canonique
 		const hashedCanonical = await this.sha256String(canonicalRequest);
 		minioLog(`🔑 Hashed canonical: ${hashedCanonical}`);
-
 		// 6. String to sign
 		const region = this.config.region;
 		const stringToSign =
@@ -149,10 +130,8 @@ class MultipartMinioClient {
 			`${amzDate}\n` +
 			`${date}/${region}/s3/aws4_request\n` +
 			`${hashedCanonical}`;
-
 		minioLog('🔑 String to sign:');
 		minioLog(stringToSign);
-
 		// 7. Signature
 		const signature = await this.generateSignature(
 			this.config.secretAccessKey,
@@ -160,16 +139,13 @@ class MultipartMinioClient {
 			region,
 			stringToSign
 		);
-
 		// 8. Authorization
 		const auth =
 			`AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${date}/${region}/s3/aws4_request, ` +
 			`SignedHeaders=${signedHeaders}, ` +
 			`Signature=${signature}`;
-
 		minioLog('🔐 Authorization:');
 		minioLog(auth);
-
 		// 9. Headers finaux - NE PAS INCLURE Content-Length
 		const finalHeaders = {
 			'Host': host,
@@ -179,7 +155,6 @@ class MultipartMinioClient {
 			'Content-Type': contentType
 			// 'Content-Length' est supprimé - fetch le gère automatiquement
 		};
-
 		minioLog('📋 Headers finaux:');
 		Object.entries(finalHeaders).forEach(([k, v]) => {
 			if (k === 'Authorization') {
@@ -188,14 +163,12 @@ class MultipartMinioClient {
 				minioLog(`  ${k}: ${v}`);
 			}
 		});
-
 		return {url, headers: finalHeaders, payloadHash};
 	}
 
 	// ==========================================
 	// UPLOAD MODIFIÉ - avec support multipart
 	// ==========================================
-
 	async upload(content, key) {
 		try {
 			// S'assurer que content est un Uint8Array ou ArrayBuffer
@@ -207,23 +180,15 @@ class MultipartMinioClient {
 			} else {
 				body = new Uint8Array(content);
 			}
-
 			minioLog(`📤 Upload: ${key} (${body.byteLength} octets)`);
-			minioLog(`🌐 URL: ${req.url}`);
-
 			const size = body.byteLength;
 			const threshold = this.config.multipartThreshold;
-
 			// Si le fichier est petit, utiliser l'upload simple existant
 			if (size <= threshold) {
-				minioLog(`📤 Upload simple (${size} octets)`);
 				return await this._uploadSingle(body, key);
 			}
-
 			// Sinon, utiliser multipart
-			minioLog(`📤 Upload multipart (${size} octets, seuil: ${threshold})`);
 			return await this._uploadMultipart(body, key);
-
 		} catch (error) {
 			minioLogError(`❌ Erreur d'upload: ${error.message}`);
 			minioLogError(`📋 Stack: ${error.stack}`);
@@ -234,24 +199,19 @@ class MultipartMinioClient {
 	// ==========================================
 	// UPLOAD SIMPLE (méthode existante légèrement modifiée)
 	// ==========================================
-
 	async _uploadSingle(body, key) {
 		const req = await this.prepareRequest(body, key);
-
 		minioLog(`📤 Upload simple: ${key} (${body.byteLength} octets)`);
 		minioLog(`🌐 URL: ${req.url}`);
-
 		// NE PAS inclure Content-Length manuellement - laissez fetch le gérer
 		const headers = {...req.headers};
 		delete headers['Content-Length']; // Supprimer Content-Length
-
 		// Ajouter un timeout
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => {
 			minioLogError(`⏰ Timeout après 60 secondes`);
 			controller.abort();
 		}, 60000); // 60 secondes de timeout
-
 		try {
 			const response = await fetch(req.url, {
 				method: 'PUT',
@@ -259,22 +219,17 @@ class MultipartMinioClient {
 				body: body,  // Uint8Array
 				signal: controller.signal
 			});
-
 			clearTimeout(timeoutId);
-
 			let responseText = '';
 			try {
 				responseText = await response.text();
 			} catch (e) {
 // Ignorer les erreurs de lecture du texte
 			}
-
 			minioLog(`📊 Status: ${response.status} ${response.statusText}`);
-
 			if (responseText) {
 				minioLog('📄 Réponse:', responseText);
 			}
-
 			if (!response.ok) {
 // MinIO renvoie souvent des erreurs XML
 				let errorMsg = `[${response.status}] ${response.statusText}`;
@@ -289,10 +244,8 @@ class MultipartMinioClient {
 				}
 				throw new Error(errorMsg);
 			}
-
 			minioLog(`✅ Upload simple réussi: ${key}`);
 			return {key, url: req.url, status: response.status};
-
 		} catch (error) {
 			clearTimeout(timeoutId);
 			if (error.name === 'AbortError') {
@@ -305,47 +258,38 @@ class MultipartMinioClient {
 	// ==========================================
 	// UPLOAD MULTIPART (NOUVEAU)
 	// ==========================================
-
 	async _uploadMultipart(body, key) {
+		minioLog(`📤 Upload multipart (${size} octets, seuil: ${threshold})`);
+		minioLog(`🌐 URL: ${req.url}`);
 		const chunkSize = this.config.chunkSize;
 		const totalSize = body.byteLength;
 		const totalChunks = Math.ceil(totalSize / chunkSize);
-
 		minioLog(`📦 Multipart: ${totalChunks} morceaux de ${chunkSize / 1024 / 1024}MB`);
-
 		// 1. Initier l'upload multipart
 		const uploadId = await this._initiateMultipartUpload(key);
 		minioLog(`📦 Upload ID: ${uploadId}`);
-
 		// 2. Uploader les morceaux
 		const parts = [];
 		const maxConcurrent = this.config.concurrentUploads;
-
 		for (let i = 0; i < totalChunks; i += maxConcurrent) {
 			const batch = [];
 			const batchEnd = Math.min(i + maxConcurrent, totalChunks);
-
 			for (let j = i; j < batchEnd; j++) {
 				const start = j * chunkSize;
 				const end = Math.min(start + chunkSize, totalSize);
 				const chunk = body.slice(start, end);
 				const partNumber = j + 1;
-
 				batch.push(this._uploadPart(key, uploadId, partNumber, chunk));
 			}
-
 			// Attendre le lot
 			const results = await Promise.all(batch);
 			parts.push(...results);
-
 			minioLog(`📦 Progression: ${Math.min(i + maxConcurrent, totalChunks)}/${totalChunks}`);
 		}
-
 		// 3. Finaliser l'upload
 		minioLog(`📦 Finalisation de l'upload multipart...`);
 		const result = await this._completeMultipartUpload(key, uploadId, parts);
 		minioLog(`✅ Upload multipart réussi: ${key}`);
-
 		return result;
 	}
 
@@ -355,22 +299,18 @@ class MultipartMinioClient {
 	async _initiateMultipartUpload(key) {
 		const url = `${this.buildUrl(key)}?uploads=`;
 		const headers = await this._getMultipartHeaders('POST', `/${this.config.bucket}/${key}?uploads=`, '');
-
 		const response = await fetch(url, {
 			method: 'POST', headers: headers
 		});
-
 		if (!response.ok) {
 			const text = await response.text();
 			throw new Error(`Initiation multipart échouée: ${response.status} - ${text}`);
 		}
-
 		const text = await response.text();
 		const uploadId = text.match(/<UploadId>(.*?)<\/UploadId>/)?.[1];
 		if (!uploadId) {
 			throw new Error('UploadId non trouvé dans la réponse');
 		}
-
 		return uploadId;
 	}
 
@@ -380,28 +320,22 @@ class MultipartMinioClient {
 	async _uploadPart(key, uploadId, partNumber, chunk) {
 		const url = `${this.buildUrl(key)}?partNumber=${partNumber}&uploadId=${uploadId}`;
 		const headers = await this._getMultipartHeaders('PUT', `/${this.config.bucket}/${key}?partNumber=${partNumber}&uploadId=${uploadId}`, chunk);
-
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => {
 			minioLogError(`⏰ Timeout part ${partNumber}`);
 			controller.abort();
 		}, 60000);
-
 		try {
 			const response = await fetch(url, {
 				method: 'PUT', headers: headers, body: chunk, signal: controller.signal
 			});
-
 			clearTimeout(timeoutId);
-
 			if (!response.ok) {
 				const text = await response.text();
 				throw new Error(`Part ${partNumber} échoué: ${response.status} - ${text}`);
 			}
-
 			const etag = response.headers.get('ETag');
 			return {PartNumber: partNumber, ETag: etag};
-
 		} catch (error) {
 			clearTimeout(timeoutId);
 			if (error.name === 'AbortError') {
@@ -416,26 +350,21 @@ class MultipartMinioClient {
 	 */
 	async _completeMultipartUpload(key, uploadId, parts) {
 		const url = `${this.buildUrl(key)}?uploadId=${uploadId}`;
-
 		// Construire le XML
 		let xml = '<CompleteMultipartUpload>';
 		for (const part of parts) {
 			xml += `<Part><PartNumber>${part.PartNumber}</PartNumber><ETag>${part.ETag}</ETag></Part>`;
 		}
 		xml += '</CompleteMultipartUpload>';
-
 		const headers = await this._getMultipartHeaders('POST', `/${this.config.bucket}/${key}?uploadId=${uploadId}`, xml);
 		headers['Content-Type'] = 'application/xml';
-
 		const response = await fetch(url, {
 			method: 'POST', headers: headers, body: xml
 		});
-
 		if (!response.ok) {
 			const text = await response.text();
 			throw new Error(`Complétion multipart échouée: ${response.status} - ${text}`);
 		}
-
 		return {
 			key, url: this.buildUrl(key), status: response.status, uploadId: uploadId
 		};
@@ -449,49 +378,37 @@ class MultipartMinioClient {
 		const now = new Date();
 		const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
 		const date = amzDate.slice(0, 8);
-
 		let payloadHash;
 		if (body && body.byteLength > 0) {
 			payloadHash = await this.sha256(body);
 		} else {
 			payloadHash = 'UNSIGNED-PAYLOAD';
 		}
-
 		const headersToSign = {
 			'host': host, 'x-amz-content-sha256': payloadHash, 'x-amz-date': amzDate
 		};
-
 		const sortedHeaders = Object.entries(headersToSign).sort((a, b) => a[0].localeCompare(b[0]));
 		const canonicalHeaders = sortedHeaders.map(([k, v]) => `${k}:${v}\n`).join('');
 		const signedHeaders = sortedHeaders.map(([k]) => k).join(';');
-
 		const canonicalRequest = `${method}\n${path}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
-
 		const hashedCanonical = await this.sha256String(canonicalRequest);
-
 		const region = this.config.region;
 		const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${date}/${region}/s3/aws4_request\n${hashedCanonical}`;
-
 		const signature = await this.generateSignature(this.config.secretAccessKey, date, region, stringToSign);
-
 		const auth = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${date}/${region}/s3/aws4_request, ` + `SignedHeaders=${signedHeaders}, ` + `Signature=${signature}`;
-
 		const headers = {
 			'Host': host, 'x-amz-content-sha256': payloadHash, 'x-amz-date': amzDate, 'Authorization': auth
 		};
-
 		// Ajouter Content-Type si nécessaire
 		if (method === 'PUT' || method === 'POST') {
 			headers['Content-Type'] = 'application/octet-stream';
 		}
-
 		return headers;
 	}
 
 	// ==========================================
 	// MÉTHODES EXISTANTES (non modifiées)
 	// ==========================================
-
 	async test() {
 		minioLog('🧪 Test de connexion...');
 		const encoder = new TextEncoder();
@@ -512,12 +429,10 @@ class MultipartMinioClient {
 		const protocol = this.config.useSSL ? 'https' : 'http';
 		const region = this.config.region || 'us-east-1';
 		const bucket = this.config.bucket;
-
 		// Date et heure actuelles
 		const now = new Date();
 		const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
 		const date = amzDate.slice(0, 8);
-
 		// Construire la query string avec les paramètres S3
 		const queryParams = {
 			'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
@@ -526,22 +441,17 @@ class MultipartMinioClient {
 			'X-Amz-Expires': expiresIn.toString(),
 			'X-Amz-SignedHeaders': 'host'
 		};
-
 		// Trier les paramètres par ordre alphabétique (exigé par SigV4)
 		const sortedKeys = Object.keys(queryParams).sort();
 		const canonicalQueryString = sortedKeys
 			.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(queryParams[k])}`)
 			.join('&');
-
 		// Construire la requête canonique
 		const canonicalRequest = `GET\n/${bucket}/${key}\n${canonicalQueryString}\nhost:${host}\n\nhost\nUNSIGNED-PAYLOAD`;
-
 		// Hash de la requête canonique
 		const hashedCanonical = await this.sha256String(canonicalRequest);
-
 		// Créer le "String to Sign"
 		const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${date}/${region}/s3/aws4_request\n${hashedCanonical}`;
-
 		// Générer la signature
 		const signature = await this.generateSignature(
 			this.config.secretAccessKey,
@@ -549,14 +459,11 @@ class MultipartMinioClient {
 			region,
 			stringToSign
 		);
-
 		// Construire l'URL finale
 		const baseUrl = `${protocol}://${host}/${bucket}/${key}`;
 		const presignedUrl = `${baseUrl}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
-
 		minioLog(`🔗 URL pré-signée générée: ${presignedUrl.substring(0, 150)}...`);
 		minioLog(`⏱️ Valable ${expiresIn} secondes (${Math.round(expiresIn / 86400)} jours)`);
-
 		return presignedUrl;
 	}
 
@@ -570,10 +477,8 @@ class MultipartMinioClient {
 	async uploadWithPresignedUrl(content, key, expiresIn = 604800) {
 		// 1. Upload du fichier
 		const uploadResult = await this.upload(content, key);
-
 		// 2. Générer l'URL pré-signée
 		const presignedUrl = await this.generatePresignedUrl(key, expiresIn);
-
 		return {
 			key: key, url: uploadResult.url,           // URL directe (pour info)
 			presignedUrl: presignedUrl       // URL temporaire à partager
@@ -584,8 +489,7 @@ class MultipartMinioClient {
 // ==========================================
 // EXPORT
 // ==========================================
-
 // Pour utilisation dans les scripts Thunderbird
 if (typeof module !== 'undefined' && module.exports) {
-	module.exports = {MinioClient};
+	module.exports = {MultipartMinioClient};
 }
