@@ -45,6 +45,14 @@ function init(accountId) {
         region: document.getElementById('region'),
         customUrl: document.getElementById('customUrl'),
         uploadSizeLimit: document.getElementById('uploadSizeLimit'),
+        // Paramètres multipart
+        multipartThreshold: document.getElementById('multipartThreshold'),
+        chunkSize: document.getElementById('chunkSize'),
+        concurrentUploads: document.getElementById('concurrentUploads'),
+        timeout: document.getElementById('timeout'),
+        retryCount: document.getElementById('retryCount'),
+        retryDelay: document.getElementById('retryDelay'),
+        // Boutons
         saveBtn: document.getElementById('saveBtn'),
         testBtn: document.getElementById('testBtn'),
         status: document.getElementById('status'),
@@ -83,7 +91,14 @@ function init(accountId) {
             useSSL: els.useSSL ? els.useSSL.checked : false,
             region: els.region ? els.region.value.trim() || 'us-east-1' : 'us-east-1',
             customUrl: els.customUrl ? els.customUrl.value.trim() : '',
-            uploadSizeLimit: els.uploadSizeLimit ? parseInt(els.uploadSizeLimit.value) || -1 : -1
+            uploadSizeLimit: els.uploadSizeLimit ? parseInt(els.uploadSizeLimit.value) || -1 : -1,
+            // Paramètres multipart
+            multipartThreshold: els.multipartThreshold ? parseInt(els.multipartThreshold.value) * 1024 * 1024 : 5 * 1024 * 1024,
+            chunkSize: els.chunkSize ? parseInt(els.chunkSize.value) * 1024 * 1024 : 5 * 1024 * 1024,
+            concurrentUploads: els.concurrentUploads ? parseInt(els.concurrentUploads.value) : 3,
+            timeout: els.timeout ? parseInt(els.timeout.value) * 1000 : 60000,
+            retryCount: els.retryCount ? parseInt(els.retryCount.value) : 3,
+            retryDelay: els.retryDelay ? parseInt(els.retryDelay.value) : 1000
         };
     }
 
@@ -96,6 +111,13 @@ function init(accountId) {
         if (els.region) els.region.value = data.region || 'us-east-1';
         if (els.customUrl) els.customUrl.value = data.customUrl || '';
         if (els.uploadSizeLimit) els.uploadSizeLimit.value = data.uploadSizeLimit || '';
+        // Paramètres multipart (conversion octets → MB pour l'affichage)
+        if (els.multipartThreshold) els.multipartThreshold.value = (data.multipartThreshold || 5 * 1024 * 1024) / 1024 / 1024;
+        if (els.chunkSize) els.chunkSize.value = (data.chunkSize || 5 * 1024 * 1024) / 1024 / 1024;
+        if (els.concurrentUploads) els.concurrentUploads.value = data.concurrentUploads || 3;
+        if (els.timeout) els.timeout.value = (data.timeout || 60000) / 1000;
+        if (els.retryCount) els.retryCount.value = data.retryCount || 3;
+        if (els.retryDelay) els.retryDelay.value = data.retryDelay || 1000;
     }
 
     function validateForm(data) {
@@ -103,6 +125,13 @@ function init(accountId) {
         if (!data.bucketName) return 'Le bucket est requis';
         if (!data.accessKeyId) return 'L\'access key est requise';
         if (!data.secretAccessKey) return 'La secret key est requise';
+        // Validation des paramètres multipart
+        if (data.multipartThreshold < 1 * 1024 * 1024) return 'Le seuil multipart doit être d\'au moins 1MB';
+        if (data.chunkSize < 1 * 1024 * 1024) return 'La taille des chunks doit être d\'au moins 1MB';
+        if (data.concurrentUploads < 1 || data.concurrentUploads > 10) return 'Les uploads concurrents doivent être entre 1 et 10';
+        if (data.timeout < 10000) return 'Le timeout doit être d\'au moins 10 secondes';
+        if (data.retryCount < 0 || data.retryCount > 10) return 'Le nombre de tentatives doit être entre 0 et 10';
+        if (data.retryDelay < 500) return 'Le délai entre tentatives doit être d\'au moins 500ms';
         return null;
     }
 
@@ -148,6 +177,17 @@ function init(accountId) {
                 log('✅ Configuration chargée');
             } else {
                 log('ℹ️ Aucune configuration trouvée');
+                // Valeurs par défaut
+                fillForm({
+                    useSSL: false,
+                    region: 'us-east-1',
+                    multipartThreshold: 5 * 1024 * 1024,
+                    chunkSize: 5 * 1024 * 1024,
+                    concurrentUploads: 3,
+                    timeout: 60000,
+                    retryCount: 3,
+                    retryDelay: 1000
+                });
             }
 
             await updateConfigStatus();
@@ -235,7 +275,7 @@ function init(accountId) {
         els.testBtn.addEventListener('click', testConnection);
         log('✅ Événement testBtn attaché');
     }
-
+ 
     // Raccourci Entrée
     document.querySelectorAll('input').forEach(input => {
         input.addEventListener('keypress', e => {

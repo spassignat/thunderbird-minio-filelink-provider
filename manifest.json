@@ -17,7 +17,8 @@
   "background": {
     "scripts": [
       "account-manager.js",
-      "minio-client.js",
+      "client-config.js",
+      "minio-client-multipart.js",
       "LoggerProxy.js",
       "background.js"
     ]

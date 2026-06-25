@@ -28,6 +28,8 @@ const accountManager = logClass(new AccountManager(), "AccountManager");
 // ==========================================
 // GESTION DE LA CONFIGURATION PAR COMPTE
 // ==========================================
+// Ajouter une constante pour la durée par défaut
+const DEFAULT_LINK_EXPIRY = 7 * 24 * 60 * 60; // 7 jours en secondes
 
 /**
  * Récupère la configuration pour un compte spécifique
@@ -73,6 +75,7 @@ async function deleteConfig(accountId) {
         return false;
     }
 }
+
 /**
  * Vérifie si un compte est configuré
  */
@@ -128,11 +131,68 @@ async function updateAccountInfo(accountId) {
 // ==========================================
 // GESTIONNAIRES D'UPLOAD
 // ==========================================
+/**
+ * Upload un fichier vers MinIO avec URL pré-signée
+ */
+async function handleUpload(accountId, file, relatedFileInfo = null) {
+    const {config, client} = await createMinioClient(accountId);
+
+    // 1. Lire le contenu du fichier
+    const content = await file.arrayBuffer();
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    // 2. Déterminer la clé de l'objet
+    let key;
+    if (relatedFileInfo && relatedFileInfo.url) {
+        // Extraire la clé de l'URL existante
+        const urlParts = relatedFileInfo.url.split('/');
+        key = urlParts[urlParts.length - 1];
+        log(`♻️ Mise à jour du fichier existant: ${key}`);
+    } else {
+        key = `${Date.now()}-${safeName}`;
+    }
+
+    // 3. Durée de validité (configurable par compte)
+    const expirySeconds = config.linkExpiry || DEFAULT_LINK_EXPIRY;
+    log(`⏱️ Durée de validité: ${expirySeconds} secondes (${Math.round(expirySeconds / 86400)} jours)`);
+
+    // 4. Upload et génération de l'URL pré-signée
+    const result = await client.uploadWithPresignedUrl(
+        new Uint8Array(content),
+        key,
+        expirySeconds
+    );
+
+    log(`✅ Upload réussi: ${result.key}`);
+    log(`🔗 URL pré-signée: ${result.presignedUrl.substring(0, 100)}...`);
+
+    // 5. Retourner l'URL pré-signée à Thunderbird
+    return {
+        url: result.presignedUrl,  // ← C'est l'URL qui sera dans l'email
+        key: result.key,
+        templateInfo: {
+            service_name: 'MinIO',
+            service_icon: browser.runtime.getURL('icon64.png'),
+            service_url: config.endpoint,
+            // Ajouter la date d'expiration pour l'affichage dans Thunderbird
+            download_expiry_date: {
+                timestamp: Date.now() + (expirySeconds * 1000),
+                format: {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }
+            }
+        }
+    };
+}
 
 /**
  * Upload un fichier vers MinIO pour un compte spécifique
  */
-async function handleUpload(accountId, file, relatedFileInfo = null) {
+async function handleUploadPrivateURL(accountId, file, relatedFileInfo = null) {
     const {config, client} = await createMinioClient(accountId);
 
     const content = await file.data.arrayBuffer();
@@ -177,20 +237,22 @@ async function createMinioClient(accountId) {
     }
 
     // Utilisation du client MinIO pour la suppression
-    let minioClient = new MinioClient({
+    let minioClient = new MultipartMinioClient({
         endpoint: config.endpoint,
         bucket: config.bucketName,
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
         useSSL: config.useSSL || false,
         usePathStyle: true,
-        region: config.region || 'us-east-1'
-    });
+        region: config.region || 'us-east-1',
+        multipartThreshold: config.multipartThreshold || 5 * 1024 * 1024, // 5MB
+        chunkSize: config.chunkSize || 5 * 1024 * 1024, // 5MB par chunk
+        concurrentUploads: config.concurrentUploads || 3,  });
     /**
      *
      * @type {MinioClient}
      */
-    // const client = minioClient;
+        // const client = minioClient;
     const client = logClass(minioClient, "MinioClient");
     return {config, client};
 }
