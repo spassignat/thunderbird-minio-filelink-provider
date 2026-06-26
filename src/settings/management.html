@@ -269,7 +269,34 @@
                 <div class="hint">Délai d'attente entre chaque tentative</div>
             </div>
         </div>
+        <!-- SECTION OPTIONS AVANCÉES -->
+        <div class="section-title">⚙️ Options avancées</div>
 
+        <div class="form-group">
+            <div class="checkbox-group">
+                <input type="checkbox" id="generatePresignedUrl" checked />
+                <label for="generatePresignedUrl">🔗 Générer une URL pré-signée (lien temporaire)</label>
+            </div>
+            <div class="hint">Si coché, Thunderbird utilisera une URL temporaire avec date d'expiration</div>
+        </div>
+
+        <div class="form-group" id="linkExpiryGroup">
+            <label>Durée de validité du lien (jours)</label>
+            <input type="number" id="linkExpiry" value="7" min="1" max="365" step="1" />
+            <div class="hint">Durée pendant laquelle le lien de téléchargement sera valide</div>
+        </div>
+
+        <div class="form-group">
+            <label>URL de partage personnalisée (optionnel)</label>
+            <input type="text" id="customUrl" placeholder="https://domaine.com/{bucket}/{key}" />
+            <div class="hint">Utilisez <code>{bucket}</code> et <code>{key}</code>. Non utilisé si "URL pré-signée" est coché.</div>
+        </div>
+
+        <div class="form-group">
+            <label>Limite de taille d'upload (octets, optionnel)</label>
+            <input type="number" id="uploadSizeLimit" placeholder="-1 = illimité" />
+            <div class="hint">Ex: <code>1073741824</code> pour 1 Go</div>
+        </div>
         <div class="button-group">
             <button type="button" class="btn btn-primary" id="saveBtn">💾 Sauvegarder</button>
             <button type="button" class="btn btn-success" id="testBtn">🔍 Tester</button>

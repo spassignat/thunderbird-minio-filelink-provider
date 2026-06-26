@@ -124,52 +124,78 @@ async function updateAccountInfo(accountId) {
 /**
  * Upload un fichier vers MinIO avec URL pré-signée
  */
+/**
+ * Upload un fichier vers MinIO avec ou sans URL pré-signée selon la configuration
+ */
 async function handleUpload(accountId, file, relatedFileInfo = null) {
 	const {config, client} = await createMinioClient(accountId);
+
 	// 1. Lire le contenu du fichier
 	const content = await file.arrayBuffer();
 	const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+
 	// 2. Déterminer la clé de l'objet
 	let key;
 	if (relatedFileInfo && relatedFileInfo.url) {
-		// Extraire la clé de l'URL existante
 		const urlParts = relatedFileInfo.url.split('/');
 		key = urlParts[urlParts.length - 1];
 		log(`♻️ Mise à jour du fichier existant: ${key}`);
 	} else {
 		key = `${Date.now()}-${safeName}`;
 	}
-	// 3. Durée de validité (configurable par compte)
-	const expirySeconds = config.linkExpiry || DEFAULT_LINK_EXPIRY;
-	log(`⏱️ Durée de validité: ${expirySeconds} secondes (${Math.round(expirySeconds / 86400)} jours)`);
-	// 4. Upload et génération de l'URL pré-signée
-	const result = await client.uploadWithPresignedUrl(
-		new Uint8Array(content),
-		key,
-		expirySeconds
-	);
-	log(`✅ Upload réussi: ${result.key}`);
-	log(`🔗 URL pré-signée: ${result.presignedUrl.substring(0, 100)}...`);
-	// 5. Retourner l'URL pré-signée à Thunderbird
-	return {
-		url: result.presignedUrl,  // ← C'est l'URL qui sera dans l'email
-		key: result.key,
-		templateInfo: {
-			service_name: 'MinIO',
-			service_icon: browser.runtime.getURL('icon64.png'),
-			service_url: config.endpoint,
-			// Ajouter la date d'expiration pour l'affichage dans Thunderbird
-			download_expiry_date: {
-				timestamp: Date.now() + (expirySeconds * 1000),
-				format: {
-					day: '2-digit',
-					month: '2-digit',
-					year: 'numeric',
-					hour: '2-digit',
-					minute: '2-digit'
-				}
+
+	// 3. Upload du fichier
+	const uploadResult = await client.upload(new Uint8Array(content), key);
+
+	// 4. Déterminer l'URL à retourner selon la configuration
+	let fileUrl;
+	let templateInfo = {
+		service_name: 'MinIO',
+		service_icon: browser.runtime.getURL('icon64.png'),
+		service_url: config.endpoint
+	};
+
+	// Vérifier si on doit générer une URL pré-signée
+	const generatePresignedUrl = config.generatePresignedUrl !== undefined ? config.generatePresignedUrl : true;
+
+	if (generatePresignedUrl) {
+		// Générer une URL pré-signée (lien temporaire)
+		const expirySeconds = config.linkExpiry || 7 * 24 * 60 * 60; // 7 jours par défaut
+		log(`🔗 Génération d'une URL pré-signée (valable ${Math.round(expirySeconds / 86400)} jours)`);
+
+		const presignedUrl = await client.generatePresignedUrl(key, expirySeconds);
+		fileUrl = presignedUrl;
+
+		// Ajouter les informations d'expiration pour Thunderbird
+		templateInfo.download_expiry_date = {
+			timestamp: Date.now() + (expirySeconds * 1000),
+			format: {
+				day: '2-digit',
+				month: '2-digit',
+				year: 'numeric',
+				hour: '2-digit',
+				minute: '2-digit'
 			}
+		};
+
+		log(`✅ Upload réussi avec URL pré-signée: ${fileUrl.substring(0, 100)}...`);
+	} else {
+		// Utiliser l'URL directe (sans expiration)
+		if (config.customUrl) {
+			fileUrl = config.customUrl
+				.replace(/{bucket}/g, config.bucketName)
+				.replace(/{key}/g, uploadResult.key);
+		} else {
+			fileUrl = uploadResult.url;
 		}
+		log(`✅ Upload réussi avec URL directe: ${fileUrl}`);
+	}
+
+	// 5. Retourner le résultat
+	return {
+		url: fileUrl,
+		key: uploadResult.key,
+		templateInfo: templateInfo
 	};
 }
 
@@ -209,13 +235,18 @@ async function handleUploadPrivateURL(accountId, file, relatedFileInfo = null) {
 	};
 }
 
+/**
+ *
+ * @param accountId
+ * @returns {Promise<{config: MinioClientConfig, client: MinioClient}>}
+ */
 async function createMinioClient(accountId) {
 	const config = await getConfig(accountId);
 	if (!config) {
 		throw new Error(`Configuration non trouvée pour le compte ${accountId}`);
 	}
 	// Utilisation du client MinIO pour la suppression
-	let minioClient = new MultipartMinioClient({
+	let minioClient = new MinioClient({
 		endpoint: config.endpoint,
 		bucket: config.bucketName,
 		accessKeyId: config.accessKeyId,

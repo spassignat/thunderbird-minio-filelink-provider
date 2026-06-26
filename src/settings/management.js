@@ -44,6 +44,8 @@ function init(accountId) {
 		timeout: document.getElementById('timeout'),
 		retryCount: document.getElementById('retryCount'),
 		retryDelay: document.getElementById('retryDelay'),
+		generatePresignedUrl: document.getElementById('generatePresignedUrl'),
+		linkExpiry: document.getElementById('linkExpiry'),
 		// Boutons
 		saveBtn: document.getElementById('saveBtn'),
 		testBtn: document.getElementById('testBtn'),
@@ -87,7 +89,10 @@ function init(accountId) {
 			concurrentUploads: els.concurrentUploads ? parseInt(els.concurrentUploads.value) : 3,
 			timeout: els.timeout ? parseInt(els.timeout.value) * 1000 : 60000,
 			retryCount: els.retryCount ? parseInt(els.retryCount.value) : 3,
-			retryDelay: els.retryDelay ? parseInt(els.retryDelay.value) : 1000
+			retryDelay: els.retryDelay ? parseInt(els.retryDelay.value) : 1000,
+			// Nouveaux champs
+			generatePresignedUrl: els.generatePresignedUrl ? els.generatePresignedUrl.checked : true,
+			linkExpiry: els.linkExpiry ? parseInt(els.linkExpiry.value) * 24 * 60 * 60 : 7 * 24 * 60 * 60 // conversion jours → secondes
 		};
 	}
 
@@ -107,6 +112,8 @@ function init(accountId) {
 		if (els.timeout) els.timeout.value = (data.timeout || 60000) / 1000;
 		if (els.retryCount) els.retryCount.value = data.retryCount || 3;
 		if (els.retryDelay) els.retryDelay.value = data.retryDelay || 1000;
+		if (els.generatePresignedUrl) els.generatePresignedUrl.checked = data.generatePresignedUrl !== undefined ? data.generatePresignedUrl : true;
+		if (els.linkExpiry) els.linkExpiry.value = (data.linkExpiry || 7 * 24 * 60 * 60) / 24 / 60 / 60; // conversion secondes → jours
 	}
 
 	function validateForm(data) {

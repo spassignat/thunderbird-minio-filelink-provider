@@ -1,15 +1,21 @@
 {
   "name": "minio-tester",
   "version": "1.0.0",
-  "description": "Testeur MinIO - Node.js et Navigateur",
+  "description": "Testeur MinIO - Jest",
   "type": "module",
-  "main": "minio-core.js",
   "scripts": {
-    "test": "node minio-test.js",
-    "test:http": "node minio-test.js --http",
-    "test:debug": "node --inspect minio-test.js"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
   },
   "dependencies": {
     "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "@jest/globals": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }

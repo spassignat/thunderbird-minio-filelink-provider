@@ -20,6 +20,4 @@ class MinioClientConfig {
 // ==========================================
 // EXPORT
 // ==========================================
-if (typeof module !== 'undefined' && module.exports) {
-	module.exports = {MinioClientConfig, STORAGE_KEY};
-}
+export default MinioClientConfig;

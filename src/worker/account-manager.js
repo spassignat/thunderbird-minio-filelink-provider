@@ -234,6 +234,4 @@ class AccountManager {
 // ==========================================
 // EXPORT
 // ==========================================
-if (typeof module !== 'undefined' && module.exports) {
-	module.exports = {AccountManager, STORAGE_KEY};
-}
+export default AccountManager;

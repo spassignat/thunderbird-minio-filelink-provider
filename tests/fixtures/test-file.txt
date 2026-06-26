@@ -1,0 +1,3 @@
+Ceci est un fichier de test pour MinIO.
+Il sert à tester l'upload et le téléchargement.
+Date: 2024
