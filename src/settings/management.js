@@ -2,11 +2,7 @@
  * MinIO Filelink Provider - Interface de configuration
  * Gestion multi-comptes via Thunderbird cloudFile API
  */
-// ==========================================
-// LOGGER
-// ==========================================
-const log = (...args) => console.log('[UI]', ...args);
-const logError = (...args) => console.error('[UI]', ...args);
+
 // ==========================================
 // INITIALISATION
 // ==========================================

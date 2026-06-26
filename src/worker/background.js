@@ -3,15 +3,7 @@
  * Service worker pour Thunderbird
  * Fait l'interface avec TB
  */
-// ==========================================
-// IMPORT
-// ==========================================
-// AccountManager est disponible globalement via le script importé
-// ==========================================
-// LOGGER
-// ==========================================
-const log = (...args) => console.log('[MinIO]', ...args);
-const logError = (...args) => console.error('[MinIO]', ...args);
+
 // ==========================================
 // INITIALISATION DU GESTIONNAIRE DE COMPTES
 // ==========================================
@@ -131,7 +123,7 @@ async function handleUpload(accountId, file, relatedFileInfo = null) {
 	const {config, client} = await createMinioClient(accountId);
 
 	// 1. Lire le contenu du fichier
-	const content = await file.arrayBuffer();
+	const content = await file.data.arrayBuffer();
 	const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
 
 	// 2. Déterminer la clé de l'objet

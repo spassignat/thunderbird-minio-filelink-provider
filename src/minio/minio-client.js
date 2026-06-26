@@ -607,4 +607,4 @@ class MinioClient {
 // ==========================================
 // EXPORT
 // ==========================================
-export default MinioClient;
+//export default MinioClient;

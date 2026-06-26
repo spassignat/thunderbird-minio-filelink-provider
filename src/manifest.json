@@ -16,6 +16,7 @@
   ],
   "background": {
     "scripts": [
+      "Logger.js",
       "account-manager.js",
       "client-config.js",
       "minio-client.js",

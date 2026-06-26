@@ -20,4 +20,4 @@ class MinioClientConfig {
 // ==========================================
 // EXPORT
 // ==========================================
-export default MinioClientConfig;
+//export default MinioClientConfig;
