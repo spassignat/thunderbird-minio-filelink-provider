@@ -68,6 +68,8 @@ else
     echo "  ⚠️  _locales/ manquant (ignoré)"
 fi
 
+cp "README.MD" "$TMP/"
+
 # ==========================================
 # NETTOYAGE DES FICHIERS INUTILES
 # ==========================================
